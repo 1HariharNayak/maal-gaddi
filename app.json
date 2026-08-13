@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "Maal Gaddi",
+    "slug": "maal-gaddi",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "maalgaddi",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#F8FAFC"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.maalgaddi.app"
+    },
+    "android": {
+      "package": "com.maalgaddi.app"
+    },
+    "plugins": ["expo-router"]
+  }
+}
