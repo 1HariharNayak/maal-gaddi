@@ -1,21 +1,123 @@
 import {
-    vehicles,
     offers,
     popularRoutes,
     recentLocations,
     savedLocations,
-    bookings,
 } from "./dummyData";
+import apiClient from "./apiClient";
 
 function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// --- REAL backend calls (vehicles) ---
 export async function fetchVehicles() {
-    await delay(400);
-    return { data: vehicles, error: null };
+    try {
+        const response = await apiClient.get("/vehicles");
+        const vehiclesList = (Array.isArray(response.data) ? response.data : []).map((v) => ({
+            id: v._id || v.id,
+            _id: v._id || v.id,
+            name: v.name,
+            price: v.price,
+            capacity: v.capacity,
+            eta: v.eta,
+            icon: v.icon,
+            isActive: v.isActive !== false,
+        }));
+        return { data: vehiclesList, error: null };
+    } catch (error) {
+        return {
+            data: null,
+            error: error.response?.data?.message || "Failed to load vehicles. Please try again.",
+        };
+    }
 }
 
+// --- REAL backend calls (bookings) ---
+function mapBooking(b) {
+    if (!b) return null;
+    return {
+        id: b.bookingId || b._id,
+        _id: b._id,
+        bookingId: b.bookingId,
+        vehicle: typeof b.vehicle === "object" ? b.vehicle?.name : (b.vehicle || "Vehicle"),
+        vehicleData: typeof b.vehicle === "object" ? b.vehicle : null,
+        driver: b.driver || "Assigning driver…",
+        status: b.status || "Upcoming",
+        fare: b.fare,
+        coupon: b.coupon,
+        pickupLocation: b.pickupLocation,
+        dropLocation: b.dropLocation,
+        date: b.createdAt
+            ? new Date(b.createdAt).toLocaleDateString("en-IN", {
+                  day: "2-digit",
+                  month: "long",
+                  year: "numeric",
+              })
+            : "Today",
+        createdAt: b.createdAt,
+        updatedAt: b.updatedAt,
+    };
+}
+
+export async function fetchBookings(status) {
+    try {
+        const response = await apiClient.get("/bookings", {
+            params: status ? { status } : undefined,
+        });
+        const bookingsList = (Array.isArray(response.data) ? response.data : []).map(mapBooking);
+        return { data: bookingsList, error: null };
+    } catch (error) {
+        return {
+            data: null,
+            error: error.response?.data?.message || "Failed to load bookings",
+        };
+    }
+}
+
+export async function createBooking(payload) {
+    try {
+        const response = await apiClient.post("/bookings", {
+            vehicleId: payload.vehicleId,
+            pickupLocation: payload.pickupLocation,
+            dropLocation: payload.dropLocation,
+            fare: payload.fare,
+            coupon: payload.coupon,
+        });
+        return { data: mapBooking(response.data), error: null };
+    } catch (error) {
+        return {
+            data: null,
+            error: error.response?.data?.message || "Failed to create booking",
+        };
+    }
+}
+
+export async function cancelBooking(id) {
+    try {
+        const response = await apiClient.patch(`/bookings/${id}/cancel`);
+        return { data: mapBooking(response.data), error: null };
+    } catch (error) {
+        return {
+            data: null,
+            error: error.response?.data?.message || "Failed to cancel booking",
+        };
+    }
+}
+
+export async function fetchBookingById(id) {
+    try {
+        const response = await apiClient.get(`/bookings/${id}`);
+        return { data: mapBooking(response.data), error: null };
+    } catch (error) {
+        return {
+            data: null,
+            error: error.response?.data?.message || "Failed to fetch booking details",
+        };
+    }
+}
+
+// --- Static discovery mocks ---
 export async function fetchOffers() {
     await delay(350);
     return { data: offers, error: null };
@@ -36,34 +138,53 @@ export async function fetchSavedLocations() {
     return { data: savedLocations, error: null };
 }
 
-export async function fetchBookings() {
-    await delay(400);
-    return { data: [...bookings], error: null };
-}
-
-export async function createBooking(bookingData) {
-    await delay(1000);
-    const newBooking = {
-        id: `#MG${Math.floor(10000 + Math.random() * 89999)}`,
-        status: "Upcoming",
-        driver: "Assigning driver…",
-        date: new Date().toLocaleDateString("en-IN", {
-            day: "2-digit",
-            month: "long",
-            year: "numeric",
-        }),
-        ...bookingData,
-    };
-    bookings.unshift(newBooking);
-    return { data: newBooking, error: null };
-}
-
-export async function cancelBooking(bookingId) {
-    await delay(500);
-    const booking = bookings.find((b) => b.id === bookingId);
-    if (!booking) {
-        return { data: null, error: "Booking not found" };
+// --- REAL backend calls (auth) ---
+export async function requestOtp(payload) {
+    try {
+        const body = typeof payload === "object"
+            ? { name: payload.name, phone: payload.phone || payload.phoneNumber }
+            : { phone: payload };
+        const response = await apiClient.post("/auth/request-otp", body);
+        return { data: response.data, error: null };
+    } catch (error) {
+        return {
+            data: null,
+            error: error.response?.data?.message || "Something went wrong. Please try again.",
+        };
     }
-    booking.status = "Cancelled";
-    return { data: booking, error: null };
+}
+
+export async function verifyOtp(payloadOrPhone, otpArg, nameArg) {
+    try {
+        const body = typeof payloadOrPhone === "object"
+            ? {
+                phone: payloadOrPhone.phone || payloadOrPhone.phoneNumber,
+                otp: payloadOrPhone.otp,
+                name: payloadOrPhone.name,
+            }
+            : {
+                phone: payloadOrPhone,
+                otp: otpArg,
+                name: nameArg,
+            };
+        const response = await apiClient.post("/auth/verify-otp", body);
+        return { data: response.data, error: null };
+    } catch (error) {
+        return {
+            data: null,
+            error: error.response?.data?.message || "Invalid OTP. Please try again.",
+        };
+    }
+}
+
+export async function fetchMe() {
+    try {
+        const response = await apiClient.get("/auth/me");
+        return { data: response.data, error: null };
+    } catch (error) {
+        return {
+            data: null,
+            error: error.response?.data?.message || "Session expired",
+        };
+    }
 }

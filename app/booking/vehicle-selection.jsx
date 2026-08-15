@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable } from "react-native";
+import { useState, useEffect, useCallback } from "react";
+import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -7,18 +7,45 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import Spacing from "../../constants/Spacing";
 import Fonts from "../../constants/Fonts";
 import Header from "../../components/Header";
+import EmptyState from "../../components/EmptyState";
 import { useBooking } from "../../context/BookingContext";
 import { useTheme } from "../../context/ThemeContext";
-import { vehicles } from "../../services/dummyData";
+import { fetchVehicles } from "../../services/api";
 
 export default function VehicleSelectionScreen() {
   const router = useRouter();
   const { pickupLocation, dropLocation, selectedVehicle, setSelectedVehicle, setFare } = useBooking();
   const { colors } = useTheme();
-  const [selectedId, setSelectedId] = useState(selectedVehicle?.id ?? null);
+
+  const [vehiclesList, setVehiclesList] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [selectedId, setSelectedId] = useState(selectedVehicle?._id || selectedVehicle?.id || null);
+
+  const loadVehicles = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    const { data, error: apiError } = await fetchVehicles();
+    setLoading(false);
+
+    if (apiError) {
+      setError(apiError);
+    } else {
+      setVehiclesList(data || []);
+      // If a vehicle was previously selected, retain it
+      if (selectedVehicle) {
+        setSelectedId(selectedVehicle._id || selectedVehicle.id);
+      }
+    }
+  }, [selectedVehicle]);
+
+  useEffect(() => {
+    loadVehicles();
+  }, [loadVehicles]);
 
   const handleSelect = (vehicle) => {
-    setSelectedId(vehicle.id);
+    const vId = vehicle._id || vehicle.id;
+    setSelectedId(vId);
     setSelectedVehicle(vehicle);
   };
 
@@ -47,20 +74,49 @@ export default function VehicleSelectionScreen() {
         </View>
       </View>
 
-      <FlatList
-        data={vehicles}
-        keyExtractor={(item) => String(item.id)}
-        contentContainerStyle={styles.listContent}
-        renderItem={({ item }) => (
-          <VehicleListItem
-            vehicle={item}
-            selected={item.id === selectedId}
-            onSelect={() => handleSelect(item)}
-            onBook={() => handleBook(item)}
-            colors={colors}
+      {loading && !vehiclesList ? (
+        <View style={styles.centerWrapper}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.statusText, { color: colors.textMuted }]}>Loading available vehicles…</Text>
+        </View>
+      ) : error && !vehiclesList ? (
+        <View style={styles.centerWrapper}>
+          <Ionicons name="alert-circle-outline" size={48} color={colors.danger} />
+          <Text style={[styles.errorTitle, { color: colors.text }]}>Unable to load vehicles</Text>
+          <Text style={[styles.statusText, { color: colors.textMuted }]}>{error}</Text>
+          <Pressable
+            onPress={loadVehicles}
+            style={[styles.retryButton, { backgroundColor: colors.primary }]}
+            accessibilityRole="button"
+            accessibilityLabel="Retry"
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </Pressable>
+        </View>
+      ) : vehiclesList && vehiclesList.length === 0 ? (
+        <View style={styles.centerWrapper}>
+          <EmptyState
+            icon="car-outline"
+            title="No vehicles available"
+            message="No active vehicles found in your service area. Please try again later."
           />
-        )}
-      />
+        </View>
+      ) : (
+        <FlatList
+          data={vehiclesList || []}
+          keyExtractor={(item) => String(item._id || item.id)}
+          contentContainerStyle={styles.listContent}
+          renderItem={({ item }) => (
+            <VehicleListItem
+              vehicle={item}
+              selected={String(item._id || item.id) === String(selectedId)}
+              onSelect={() => handleSelect(item)}
+              onBook={() => handleBook(item)}
+              colors={colors}
+            />
+          )}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -78,7 +134,7 @@ function VehicleListItem({ vehicle, selected, onSelect, onBook, colors }) {
       ]}
     >
       <View style={[styles.iconWrapper, { backgroundColor: colors.background }]}>
-        <MaterialCommunityIcons name={vehicle.icon} size={32} color={colors.secondary} />
+        <MaterialCommunityIcons name={vehicle.icon || "truck"} size={32} color={colors.secondary} />
       </View>
 
       <View style={styles.details}>
@@ -107,6 +163,11 @@ const styles = StyleSheet.create({
   routeRow: { flexDirection: "row", alignItems: "center", marginBottom: 4 },
   routeText: { fontSize: Fonts.caption, marginLeft: Spacing.sm, flexShrink: 1 },
   listContent: { padding: Spacing.lg },
+  centerWrapper: { flex: 1, justifyContent: "center", alignItems: "center", padding: Spacing.xl },
+  statusText: { fontSize: Fonts.caption, marginTop: Spacing.sm, textAlign: "center" },
+  errorTitle: { fontSize: Fonts.h3, fontWeight: Fonts.weight.bold, marginTop: Spacing.md },
+  retryButton: { marginTop: Spacing.lg, borderRadius: 999, paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm },
+  retryButtonText: { color: "#FFFFFF", fontSize: Fonts.body, fontWeight: Fonts.weight.semibold },
   card: { flexDirection: "row", alignItems: "center", borderRadius: Spacing.borderRadius, borderWidth: 1, padding: Spacing.md, marginBottom: Spacing.md },
   cardSelectedWidth: { borderWidth: 2 },
   iconWrapper: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center", marginRight: Spacing.md },

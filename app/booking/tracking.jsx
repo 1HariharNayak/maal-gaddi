@@ -10,7 +10,6 @@ import Header from "../../components/Header";
 import BottomSheet from "../../components/BottomSheet";
 import { useBooking } from "../../context/BookingContext";
 import { useTheme } from "../../context/ThemeContext";
-import { bookings } from "../../services/dummyData";
 import { cancelBooking } from "../../services/api";
 
 const DRIVER_NAME = "Suresh Yadav";
@@ -27,23 +26,23 @@ const TIMELINE_STEPS = [
 
 export default function TrackingScreen() {
     const router = useRouter();
-    const { resetBooking } = useBooking();
+    const { confirmedBooking, resetBooking } = useBooking();
     const { colors, isDark } = useTheme();
     const [cancelSheetVisible, setCancelSheetVisible] = useState(false);
     const [cancelling, setCancelling] = useState(false);
     const [otp] = useState(() => String(Math.floor(1000 + Math.random() * 9000)));
 
-    const latestBooking = bookings[0];
+    const bookingIdentifier = confirmedBooking?._id || confirmedBooking?.id;
 
     const handleConfirmCancel = async () => {
-        if (latestBooking) {
+        if (bookingIdentifier) {
             setCancelling(true);
-            await cancelBooking(latestBooking.id);
+            await cancelBooking(bookingIdentifier);
             setCancelling(false);
         }
         setCancelSheetVisible(false);
         resetBooking();
-        router.replace("/(tabs)/home");
+        router.replace("/(tabs)/bookings");
     };
 
     return (
@@ -53,15 +52,21 @@ export default function TrackingScreen() {
             <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
                 <View style={[styles.mapPlaceholder, { backgroundColor: isDark ? "#1E293B" : "#E4ECF7" }]}>
                     <MaterialCommunityIcons name="truck-fast" size={40} color={colors.primary} />
-                    <Text style={[styles.mapCaption, { color: colors.textMuted }]}>Live tracking</Text>
+                    <Text style={[styles.mapCaption, { color: colors.textMuted }]}>
+                        {confirmedBooking?.bookingId ? `Booking ${confirmedBooking.bookingId} — Live Tracking` : "Live tracking"}
+                    </Text>
                 </View>
 
                 <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <View style={styles.driverRow}>
                         <Ionicons name="person-circle" size={52} color={colors.secondary} />
                         <View style={styles.flexShrink}>
-                            <Text style={[styles.driverName, { color: colors.text }]}>{DRIVER_NAME}</Text>
-                            <Text style={[styles.truckNumber, { color: colors.textMuted }]}>{TRUCK_NUMBER}</Text>
+                            <Text style={[styles.driverName, { color: colors.text }]}>
+                                {confirmedBooking?.driver || DRIVER_NAME}
+                            </Text>
+                            <Text style={[styles.truckNumber, { color: colors.textMuted }]}>
+                                {confirmedBooking?.vehicle ? `${confirmedBooking.vehicle} • ${TRUCK_NUMBER}` : TRUCK_NUMBER}
+                            </Text>
                         </View>
                         <View style={[styles.otpBox, { backgroundColor: colors.background }]}>
                             <Text style={[styles.otpLabel, { color: colors.textMuted }]}>OTP</Text>

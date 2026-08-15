@@ -23,22 +23,50 @@ const PAYMENT_METHODS = [
 
 export default function PaymentScreen() {
   const router = useRouter();
-  const { pickupLocation, dropLocation, selectedVehicle, fare, coupon } = useBooking();
+  const { pickupLocation, dropLocation, selectedVehicle, fare, coupon, setConfirmedBooking } = useBooking();
   const { colors } = useTheme();
 
   const [selectedMethod, setSelectedMethod] = useState("upi");
   const [paying, setPaying] = useState(false);
+  const [error, setError] = useState("");
 
   const baseFare = fare ?? selectedVehicle?.price ?? 0;
   const { isCouponApplied, total } = calculateFareBreakdown(baseFare, coupon);
 
   const handlePay = async () => {
+    if (!selectedVehicle?._id && !selectedVehicle?.id) {
+      setError("Please select a valid vehicle before proceeding");
+      return;
+    }
+
     setPaying(true);
-    await createBooking({
-      vehicle: selectedVehicle?.name || "Vehicle",
+    setError("");
+
+    const payload = {
+      vehicleId: selectedVehicle._id || selectedVehicle.id,
+      pickupLocation: {
+        address: pickupLocation?.address || "Pickup Location",
+        latitude: pickupLocation?.latitude || 12.9716,
+        longitude: pickupLocation?.longitude || 77.5946,
+      },
+      dropLocation: {
+        address: dropLocation?.address || "Drop Location",
+        latitude: dropLocation?.latitude || 12.9698,
+        longitude: dropLocation?.longitude || 77.7500,
+      },
       fare: total,
-    });
+      coupon: isCouponApplied ? coupon : undefined,
+    };
+
+    const { data, error: apiError } = await createBooking(payload);
     setPaying(false);
+
+    if (apiError) {
+      setError(apiError);
+      return;
+    }
+
+    setConfirmedBooking(data);
     router.replace("/booking/booking-success");
   };
 
@@ -93,6 +121,13 @@ export default function PaymentScreen() {
             );
           })}
         </View>
+
+        {error ? (
+          <View style={styles.errorBox}>
+            <Ionicons name="alert-circle" size={16} color={colors.danger} />
+            <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
+          </View>
+        ) : null}
       </ScrollView>
 
       <View style={[styles.footer, { borderTopColor: colors.border, backgroundColor: colors.card }]}>
@@ -119,5 +154,7 @@ const styles = StyleSheet.create({
   methodLabel: { flex: 1, fontSize: Fonts.body, fontWeight: Fonts.weight.medium },
   radioOuter: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, alignItems: "center", justifyContent: "center" },
   radioInner: { width: 10, height: 10, borderRadius: 5 },
+  errorBox: { flexDirection: "row", alignItems: "center", marginTop: Spacing.md, paddingHorizontal: Spacing.sm },
+  errorText: { fontSize: Fonts.caption, marginLeft: Spacing.xs },
   footer: { padding: Spacing.lg, borderTopWidth: 1 },
 });

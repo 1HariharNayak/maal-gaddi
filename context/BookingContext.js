@@ -1,20 +1,5 @@
 import { createContext, useContext, useState } from "react";
 
-// Shape of what this context holds:
-// {
-//   pickupLocation: { address, latitude, longitude } | null,
-//   dropLocation: { address, latitude, longitude } | null,
-//   selectedVehicle: object | null,
-//   fare: number | null,
-//   coupon: string | null
-// }
-//
-// Why a Context instead of route params: the booking flow spans six
-// screens (pickup -> drop -> vehicle -> summary -> payment -> success).
-// Passing all of that through router params would mean re-serializing
-// objects into strings at every navigation call. Keeping it in one
-// Context means every screen reads/writes the same object directly.
-
 const BookingContext = createContext(undefined);
 
 export function BookingProvider({ children }) {
@@ -23,6 +8,7 @@ export function BookingProvider({ children }) {
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [fare, setFare] = useState(null);
   const [coupon, setCoupon] = useState(null);
+  const [confirmedBooking, setConfirmedBooking] = useState(null);
 
   const resetBooking = () => {
     setPickupLocation(null);
@@ -30,6 +16,7 @@ export function BookingProvider({ children }) {
     setSelectedVehicle(null);
     setFare(null);
     setCoupon(null);
+    setConfirmedBooking(null);
   };
 
   const value = {
@@ -43,6 +30,8 @@ export function BookingProvider({ children }) {
     setFare,
     coupon,
     setCoupon,
+    confirmedBooking,
+    setConfirmedBooking,
     resetBooking,
   };
 

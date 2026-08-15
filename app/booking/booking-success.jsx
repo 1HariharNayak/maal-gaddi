@@ -10,14 +10,11 @@ import Fonts from "../../constants/Fonts";
 import PrimaryButton from "../../components/Button";
 import { useBooking } from "../../context/BookingContext";
 import { useTheme } from "../../context/ThemeContext";
-import { bookings } from "../../services/dummyData";
 
 export default function BookingSuccessScreen() {
   const router = useRouter();
-  const { resetBooking } = useBooking();
+  const { confirmedBooking, resetBooking } = useBooking();
   const { colors } = useTheme();
-
-  const latestBooking = bookings[0];
 
   const scale = useSharedValue(0);
   const opacity = useSharedValue(0);
@@ -25,7 +22,7 @@ export default function BookingSuccessScreen() {
   useEffect(() => {
     scale.value = withSpring(1, { damping: 8, stiffness: 100 });
     opacity.value = withTiming(1, { duration: 400 });
-  }, []);
+  }, [scale, opacity]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
@@ -55,7 +52,9 @@ export default function BookingSuccessScreen() {
 
         <View style={[styles.idCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.idLabel, { color: colors.textMuted }]}>Booking ID</Text>
-          <Text style={[styles.idValue, { color: colors.primary }]}>{latestBooking?.id || "—"}</Text>
+          <Text style={[styles.idValue, { color: colors.primary }]}>
+            {confirmedBooking?.bookingId || confirmedBooking?.id || "—"}
+          </Text>
         </View>
 
         <View style={styles.buttonStack}>

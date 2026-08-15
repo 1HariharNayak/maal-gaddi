@@ -1,40 +1,67 @@
-import { createContext, useContext, useState } from "react";
-
-// Shape of what this context holds, kept as a comment for quick reference:
-// {
-//   phoneNumber: string,
-//   isOtpVerified: boolean,
-//   user: { name: string } | null,
-//   isAuthenticated: boolean
-// }
+import { createContext, useContext, useState, useEffect } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { fetchMe } from "../services/api";
+import { TOKEN_STORAGE_KEY } from "../services/apiClient";
 
 const AuthContext = createContext(undefined);
 
 export function AuthProvider({ children }) {
+  const [name, setName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
-  const [isOtpVerified, setIsOtpVerified] = useState(false);
   const [user, setUser] = useState(null);
+  const [token, setToken] = useState(null);
+  const [isInitializing, setIsInitializing] = useState(true);
 
-  const login = (name) => {
-    // Dummy login: in a real app this would come from an API response
-    // after OTP verification succeeds.
-    setUser({ name });
-    setIsOtpVerified(true);
+  useEffect(() => {
+    (async () => {
+      try {
+        const storedToken = await AsyncStorage.getItem(TOKEN_STORAGE_KEY);
+
+        if (storedToken) {
+          setToken(storedToken);
+          const { data, error } = await fetchMe();
+          if (data && !error) {
+            setUser(data);
+            if (data.name) setName(data.name);
+            if (data.phone || data.phoneNumber) setPhoneNumber(data.phone || data.phoneNumber);
+          } else {
+            await AsyncStorage.removeItem(TOKEN_STORAGE_KEY);
+            setToken(null);
+          }
+        }
+      } finally {
+        setIsInitializing(false);
+      }
+    })();
+  }, []);
+
+  const login = async (userData, authToken) => {
+    setUser(userData);
+    setToken(authToken);
+    if (userData?.name) setName(userData.name);
+    if (userData?.phone || userData?.phoneNumber) {
+      setPhoneNumber(userData.phone || userData.phoneNumber);
+    }
+    await AsyncStorage.setItem(TOKEN_STORAGE_KEY, authToken);
   };
 
-  const logout = () => {
+  const logout = async () => {
     setUser(null);
-    setIsOtpVerified(false);
+    setToken(null);
+    setName("");
     setPhoneNumber("");
+    await AsyncStorage.removeItem(TOKEN_STORAGE_KEY);
   };
 
   const value = {
-    phoneNumber,
+    name,
+    setName,
+    phoneNumber: user?.phone || user?.phoneNumber || phoneNumber,
     setPhoneNumber,
-    isOtpVerified,
-    setIsOtpVerified,
     user,
+    token,
     isAuthenticated: !!user,
+    isInitializing,
     login,
     logout,
   };
@@ -42,8 +69,6 @@ export function AuthProvider({ children }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-// Custom hook so screens never import AuthContext directly (per the
-// project's state management rules) — they call useAuth() instead.
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {

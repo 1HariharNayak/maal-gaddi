@@ -8,17 +8,20 @@ import Fonts from "../../constants/Fonts";
 import PrimaryButton from "../../components/Button";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
+import { requestOtp, verifyOtp } from "../../services/api";
 
 const OTP_LENGTH = 6;
-const RESEND_SECONDS = 30;
+const RESEND_SECONDS = 60;
 
 export default function OtpScreen() {
   const router = useRouter();
-  const { phoneNumber, login } = useAuth();
+  const { name, phoneNumber, login } = useAuth();
   const { colors } = useTheme();
   const [digits, setDigits] = useState(Array(OTP_LENGTH).fill(""));
   const [secondsLeft, setSecondsLeft] = useState(RESEND_SECONDS);
   const [verifying, setVerifying] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [error, setError] = useState("");
   const inputRefs = useRef([]);
 
   const isComplete = digits.every((d) => d !== "");
@@ -34,6 +37,7 @@ export default function OtpScreen() {
     const next = [...digits];
     next[index] = cleaned.slice(-1);
     setDigits(next);
+    setError("");
     if (cleaned && index < OTP_LENGTH - 1) inputRefs.current[index + 1]?.focus();
   };
 
@@ -43,21 +47,45 @@ export default function OtpScreen() {
     }
   };
 
-  const handleResend = () => {
-    if (secondsLeft > 0) return;
+  const handleResend = async () => {
+    if (secondsLeft > 0 || resending) return;
+    setResending(true);
+    setError("");
+
+    const { error: apiError } = await requestOtp({ name, phone: phoneNumber });
+    setResending(false);
+
+    if (apiError) {
+      setError(apiError);
+      return;
+    }
+
     setSecondsLeft(RESEND_SECONDS);
     setDigits(Array(OTP_LENGTH).fill(""));
     inputRefs.current[0]?.focus();
   };
 
-  const handleVerify = () => {
+  const handleVerify = async () => {
     if (!isComplete) return;
     setVerifying(true);
-    setTimeout(() => {
-      setVerifying(false);
-      login("Arya");
-      router.replace("/(tabs)/home");
-    }, 600);
+    setError("");
+
+    const otpString = digits.join("");
+    const { data, error: apiError } = await verifyOtp({
+      phone: phoneNumber,
+      otp: otpString,
+      name,
+    });
+
+    setVerifying(false);
+
+    if (apiError) {
+      setError(apiError);
+      return;
+    }
+
+    await login(data.user, data.token);
+    router.replace("/(tabs)/home");
   };
 
   return (
@@ -66,6 +94,7 @@ export default function OtpScreen() {
         <Text style={[styles.title, { color: colors.text }]}>Verify your number</Text>
         <Text style={[styles.subtitle, { color: colors.textMuted }]}>
           Enter the 6-digit code sent to {phoneNumber ? `+91 ${phoneNumber}` : "your phone"}
+          {name ? ` for ${name}` : ""}.
         </Text>
 
         <View style={styles.otpRow}>
@@ -87,14 +116,25 @@ export default function OtpScreen() {
           ))}
         </View>
 
+        {error ? (
+          <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
+        ) : null}
+
         <View style={styles.resendRow}>
           {secondsLeft > 0 ? (
             <Text style={[styles.timerText, { color: colors.textMuted }]}>
               Resend OTP in 0:{secondsLeft.toString().padStart(2, "0")}
             </Text>
           ) : (
-            <Pressable onPress={handleResend} accessibilityRole="button" accessibilityLabel="Resend OTP">
-              <Text style={[styles.resendText, { color: colors.primary }]}>Resend OTP</Text>
+            <Pressable
+              onPress={handleResend}
+              disabled={resending}
+              accessibilityRole="button"
+              accessibilityLabel="Resend OTP"
+            >
+              <Text style={[styles.resendText, { color: colors.primary }]}>
+                {resending ? "Sending OTP..." : "Resend OTP"}
+              </Text>
             </Pressable>
           )}
         </View>
@@ -113,7 +153,15 @@ const styles = StyleSheet.create({
   title: { fontSize: Fonts.h2, fontWeight: Fonts.weight.bold, marginBottom: Spacing.xs },
   subtitle: { fontSize: Fonts.body, marginBottom: Spacing.xl },
   otpRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: Spacing.lg },
-  otpBox: { width: 48, height: 56, borderRadius: Spacing.borderRadius, borderWidth: 1, fontSize: Fonts.h3, textAlign: "center" },
+  otpBox: {
+    width: 48,
+    height: 56,
+    borderRadius: Spacing.borderRadius,
+    borderWidth: 1,
+    fontSize: Fonts.h3,
+    textAlign: "center",
+  },
+  errorText: { fontSize: Fonts.caption, textAlign: "center", marginBottom: Spacing.md },
   resendRow: { alignItems: "center", marginBottom: Spacing.lg },
   timerText: { fontSize: Fonts.body },
   resendText: { fontSize: Fonts.body, fontWeight: Fonts.weight.semibold },

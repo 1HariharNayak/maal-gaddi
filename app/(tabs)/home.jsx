@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, FlatList, Pressable, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -16,35 +16,60 @@ import EmptyState from "../../components/EmptyState";
 import { useAuth } from "../../context/AuthContext";
 import { useBooking } from "../../context/BookingContext";
 import { useTheme } from "../../context/ThemeContext";
-import { vehicles, offers, popularRoutes } from "../../services/dummyData";
-import { fetchBookings } from "../../services/api";
+import { offers, popularRoutes } from "../../services/dummyData";
+import { fetchBookings, fetchVehicles } from "../../services/api";
 
 const PRIMARY_TINT = "rgba(255, 107, 0, 0.15)";
 
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { setSelectedVehicle } = useBooking();
+  const { setSelectedVehicle, setConfirmedBooking } = useBooking();
   const { colors } = useTheme();
 
+  const [vehiclesList, setVehiclesList] = useState(null);
+  const [vehiclesLoading, setVehiclesLoading] = useState(true);
+  const [vehiclesError, setVehiclesError] = useState("");
   const [recentBookings, setRecentBookings] = useState(null);
+
+  const loadVehicles = useCallback(async () => {
+    setVehiclesLoading(true);
+    setVehiclesError("");
+    const { data, error } = await fetchVehicles();
+    setVehiclesLoading(false);
+    if (error) {
+      setVehiclesError(error);
+    } else {
+      setVehiclesList(data || []);
+    }
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
     (async () => {
+      loadVehicles();
       const { data } = await fetchBookings();
-      if (isMounted) setRecentBookings(data.slice(0, 2));
+      if (isMounted) setRecentBookings(data ? data.slice(0, 2) : []);
     })();
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [loadVehicles]);
 
   const goToBookingStart = () => router.push("/booking/pickup-location");
 
   const handleVehiclePress = (vehicle) => {
     setSelectedVehicle(vehicle);
     goToBookingStart();
+  };
+
+  const handleBookingPress = (booking) => {
+    if (booking.status === "Upcoming") {
+      setConfirmedBooking(booking);
+      router.push("/booking/tracking");
+    } else {
+      router.push("/(tabs)/bookings");
+    }
   };
 
   return (
@@ -83,26 +108,57 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Vehicle Categories</Text>
-            <FlatList
-              data={vehicles}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              keyExtractor={(item) => String(item.id)}
-              contentContainerStyle={styles.horizontalListContent}
-              renderItem={({ item, index }) => (
-                <Animated.View entering={FadeInRight.delay(index * 80).duration(400)}>
-                  <VehicleCard
-                    title={item.name}
-                    capacity={item.capacity}
-                    price={item.price}
-                    eta={item.eta}
-                    icon={item.icon}
-                    onPress={() => handleVehiclePress(item)}
-                  />
-                </Animated.View>
-              )}
-            />
+            <View style={styles.sectionHeaderRow}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Vehicle Categories</Text>
+              {vehiclesError ? (
+                <Pressable onPress={loadVehicles} accessibilityRole="button" accessibilityLabel="Retry loading vehicles">
+                  <Text style={[styles.retryText, { color: colors.primary }]}>Retry</Text>
+                </Pressable>
+              ) : null}
+            </View>
+
+            {vehiclesLoading && !vehiclesList ? (
+              <View style={styles.loadingWrapper}>
+                <ActivityIndicator color={colors.primary} />
+              </View>
+            ) : vehiclesError && !vehiclesList ? (
+              <View style={[styles.errorWrapper, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Ionicons name="alert-circle-outline" size={24} color={colors.danger} />
+                <Text style={[styles.errorSubtitle, { color: colors.textMuted }]}>{vehiclesError}</Text>
+                <Pressable
+                  onPress={loadVehicles}
+                  style={[styles.retryButton, { backgroundColor: colors.primary }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Retry"
+                >
+                  <Text style={styles.retryButtonText}>Retry</Text>
+                </Pressable>
+              </View>
+            ) : vehiclesList && vehiclesList.length === 0 ? (
+              <View style={[styles.errorWrapper, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Text style={[styles.errorSubtitle, { color: colors.textMuted }]}>No vehicles available</Text>
+              </View>
+            ) : (
+              <FlatList
+                data={vehiclesList || []}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                keyExtractor={(item) => String(item.id || item._id)}
+                contentContainerStyle={styles.horizontalListContent}
+                renderItem={({ item, index }) => (
+                  <Animated.View entering={FadeInRight.delay(index * 80).duration(400)}>
+                    <VehicleCard
+                      title={item.name}
+                      capacity={item.capacity}
+                      price={item.price}
+                      eta={item.eta}
+                      icon={item.icon}
+                      onPress={() => handleVehiclePress(item)}
+                    />
+                  </Animated.View>
+                )}
+              />
+            )}
           </View>
 
           <View style={styles.section}>
@@ -156,10 +212,10 @@ export default function HomeScreen() {
               <FlatList
                 data={recentBookings}
                 scrollEnabled={false}
-                keyExtractor={(item) => item.id}
+                keyExtractor={(item) => String(item._id || item.id)}
                 renderItem={({ item, index }) => (
                   <Animated.View entering={FadeInDown.delay(index * 100).duration(400)}>
-                    <BookingCard booking={item} onPress={() => { }} />
+                    <BookingCard booking={item} onPress={() => handleBookingPress(item)} />
                   </Animated.View>
                 )}
               />
@@ -196,11 +252,17 @@ const styles = StyleSheet.create({
   searchGap: { height: Spacing.sm },
   section: { marginTop: Spacing.xl },
   lastSection: { marginBottom: Spacing.md },
-  sectionTitle: { fontSize: Fonts.h3, fontWeight: Fonts.weight.bold, marginBottom: Spacing.md },
+  sectionHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: Spacing.md },
+  sectionTitle: { fontSize: Fonts.h3, fontWeight: Fonts.weight.bold },
+  retryText: { fontSize: Fonts.caption, fontWeight: Fonts.weight.semibold },
   horizontalListContent: { paddingRight: Spacing.lg },
   routeChip: { flexDirection: "row", alignItems: "center", borderRadius: 999, borderWidth: 1, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, marginRight: Spacing.sm },
   routeText: { fontSize: Fonts.caption, marginLeft: Spacing.xs, fontWeight: Fonts.weight.medium },
   loadingWrapper: { paddingVertical: Spacing.xl, alignItems: "center" },
+  errorWrapper: { padding: Spacing.lg, borderRadius: Spacing.borderRadius, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  errorSubtitle: { fontSize: Fonts.caption, marginTop: Spacing.xs, textAlign: "center" },
+  retryButton: { marginTop: Spacing.md, borderRadius: 999, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.xs },
+  retryButtonText: { color: "#FFFFFF", fontSize: Fonts.caption, fontWeight: Fonts.weight.semibold },
   fab: {
     position: "absolute", bottom: Spacing.xl, right: Spacing.lg, width: 56, height: 56, borderRadius: 28,
     alignItems: "center", justifyContent: "center",

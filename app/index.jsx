@@ -17,36 +17,30 @@ import { useAuth } from "../context/AuthContext";
 
 export default function SplashScreen() {
   const router = useRouter();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isInitializing } = useAuth();
 
-  // Shared value starts at 0 (fully transparent). Reanimated updates this
-  // on the native thread, so the animation stays smooth even while JS is busy.
   const opacity = useSharedValue(0);
 
-  // Turns the shared value into an actual style object Animated.View can use.
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
   }));
 
   useEffect(() => {
-    // Fade in over 800ms as soon as the screen mounts.
     opacity.value = withTiming(1, {
       duration: 800,
       easing: Easing.out(Easing.ease),
     });
+  }, []);
 
-    // After giving the user a moment to see the branding, move on.
-    // isAuthenticated is false for everyone right now since Login/OTP
-    // aren't built yet — this always sends you to Login for now, and
-    // will correctly skip it once real auth exists.
+  useEffect(() => {
+    if (isInitializing) return;
+
     const timer = setTimeout(() => {
       router.replace(isAuthenticated ? "/(tabs)/home" : "/(auth)/login");
-    }, 1800);
+    }, 1200);
 
-    // Cleanup: if this screen were ever unmounted before the timer fires,
-    // this cancels it so we don't navigate from a screen that's gone.
     return () => clearTimeout(timer);
-  }, []);
+  }, [isInitializing, isAuthenticated]);
 
   return (
     <SafeAreaView style={styles.container}>
