@@ -1,5 +1,13 @@
-import { useState } from "react";
-import { View, Text, StyleSheet, TextInput, Pressable, ScrollView } from "react-native";
+import React, { useState, useEffect, useCallback } from "react";
+import {
+    View,
+    Text,
+    StyleSheet,
+    TextInput,
+    Pressable,
+    ScrollView,
+    ActivityIndicator,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -10,87 +18,176 @@ import Header from "../../components/Header";
 import PrimaryButton from "../../components/Button";
 import { useBooking } from "../../context/BookingContext";
 import { useTheme } from "../../context/ThemeContext";
-import { VALID_COUPON, PLATFORM_FEE, calculateFareBreakdown } from "../../utils/pricing";
-
-const DUMMY_DISTANCE = "12.4 km";
-const DUMMY_DURATION = "38 mins";
+import { estimateFare } from "../../services/api";
 
 export default function BookingSummaryScreen() {
     const router = useRouter();
-    const { pickupLocation, dropLocation, selectedVehicle, fare, coupon, setCoupon } = useBooking();
+    const {
+        pickupLocation,
+        dropLocation,
+        selectedVehicle,
+        fare,
+        setFare,
+        coupon,
+        setCoupon,
+    } = useBooking();
     const { colors } = useTheme();
 
     const [couponInput, setCouponInput] = useState(coupon || "");
     const [couponError, setCouponError] = useState("");
+    const [appliedCoupon, setAppliedCoupon] = useState(coupon || null);
+    const [estimate, setEstimate] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState("");
 
-    const baseFare = fare ?? selectedVehicle?.price ?? 0;
-    const { gst, isCouponApplied, discount, total } = calculateFareBreakdown(baseFare, coupon);
+    const fetchServerEstimate = useCallback(async (activeCoupon) => {
+        if (!selectedVehicle?._id && !selectedVehicle?.id) {
+            setError("No vehicle selected");
+            setLoading(false);
+            return;
+        }
+
+        setLoading(true);
+        setError("");
+
+        const payload = {
+            vehicleId: selectedVehicle._id || selectedVehicle.id,
+            pickupLocation: pickupLocation || { address: "Pickup Location" },
+            dropLocation: dropLocation || { address: "Drop Location" },
+            coupon: activeCoupon || undefined,
+        };
+
+        // Development Trace: FARE REQUEST
+        console.log("[FARE ESTIMATE REQUEST]", {
+            pickup: {
+                address: payload.pickupLocation.address,
+                latitude: payload.pickupLocation.latitude,
+                longitude: payload.pickupLocation.longitude,
+            },
+            drop: {
+                address: payload.dropLocation.address,
+                latitude: payload.dropLocation.latitude,
+                longitude: payload.dropLocation.longitude,
+            },
+            vehicleId: payload.vehicleId,
+            coupon: payload.coupon,
+        });
+
+        const { data, error: apiError } = await estimateFare(payload);
+        setLoading(false);
+
+        if (apiError) {
+            setError(apiError);
+        } else if (data) {
+            // Development Trace: ROUTES RESULT
+            console.log("[ROUTES RESULT]", {
+                distanceKm: data.distance?.distanceKm,
+                durationMinutes: data.distance?.durationMinutes,
+                provider: data.distance?.provider,
+                isFallback: data.distance?.isFallback,
+                totalFare: data.pricing?.totalFare,
+            });
+
+            setEstimate(data);
+            setFare(data.pricing.totalFare);
+        }
+    }, [selectedVehicle, pickupLocation, dropLocation, setFare]);
+
+    useEffect(() => {
+        fetchServerEstimate(appliedCoupon);
+    }, [fetchServerEstimate, appliedCoupon]);
 
     const handleApplyCoupon = () => {
         const code = couponInput.trim().toUpperCase();
-        if (!code) return;
-        if (code === VALID_COUPON) {
-            setCoupon(code);
-            setCouponError("");
-        } else {
+        if (!code) {
+            setAppliedCoupon(null);
             setCoupon(null);
-            setCouponError("Invalid coupon code");
+            setCouponError("");
+            return;
         }
+        setAppliedCoupon(code);
+        setCoupon(code);
+        setCouponError("");
+    };
+
+    const handleRemoveCoupon = () => {
+        setCouponInput("");
+        setAppliedCoupon(null);
+        setCoupon(null);
+        setCouponError("");
     };
 
     const handleProceed = () => {
         router.push("/booking/payment");
     };
 
+    const pricing = estimate?.pricing;
+    const distance = estimate?.distance;
+
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["top"]}>
             <Header title="Booking Summary" />
 
             <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+                {/* Route Card */}
                 <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <View style={styles.routeRow}>
                         <Ionicons name="ellipse" size={8} color={colors.primary} style={styles.routeIcon} />
                         <Text style={[styles.routeText, { color: colors.text }]} numberOfLines={2}>
-                            {pickupLocation?.address || "Pickup not set"}
+                            {pickupLocation?.address || "Pickup location selected"}
                         </Text>
                     </View>
                     <View style={[styles.routeDivider, { backgroundColor: colors.border }]} />
                     <View style={styles.routeRow}>
                         <Ionicons name="location" size={12} color={colors.danger} style={styles.routeIcon} />
                         <Text style={[styles.routeText, { color: colors.text }]} numberOfLines={2}>
-                            {dropLocation?.address || "Drop not set"}
+                            {dropLocation?.address || "Drop location selected"}
                         </Text>
                     </View>
                 </View>
 
+                {/* Vehicle & Dynamic Distance Card */}
                 <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <View style={styles.vehicleRow}>
                         <View style={[styles.vehicleIconWrapper, { backgroundColor: colors.background }]}>
-                            <MaterialCommunityIcons name={selectedVehicle?.icon || "truck"} size={28} color={colors.secondary} />
+                            <MaterialCommunityIcons
+                                name={selectedVehicle?.icon || "truck"}
+                                size={28}
+                                color={colors.secondary}
+                            />
                         </View>
                         <View style={styles.flexShrink}>
-                            <Text style={[styles.vehicleName, { color: colors.text }]}>{selectedVehicle?.name || "Vehicle not selected"}</Text>
-                            <Text style={[styles.vehicleMeta, { color: colors.textMuted }]}>{selectedVehicle?.capacity}</Text>
+                            <Text style={[styles.vehicleName, { color: colors.text }]}>
+                                {selectedVehicle?.name || "Vehicle"}
+                            </Text>
+                            <Text style={[styles.vehicleMeta, { color: colors.textMuted }]}>
+                                {selectedVehicle?.capacity}
+                            </Text>
                         </View>
                     </View>
                     <View style={[styles.statsRow, { borderTopColor: colors.border }]}>
                         <View style={styles.statBlock}>
                             <Text style={[styles.statLabel, { color: colors.textMuted }]}>Distance</Text>
-                            <Text style={[styles.statValue, { color: colors.text }]}>{DUMMY_DISTANCE}</Text>
+                            <Text style={[styles.statValue, { color: colors.text }]}>
+                                {distance?.distanceKm !== undefined ? `${distance.distanceKm} km` : "Calculating…"}
+                            </Text>
                         </View>
                         <View style={styles.statBlock}>
-                            <Text style={[styles.statLabel, { color: colors.textMuted }]}>Duration</Text>
-                            <Text style={[styles.statValue, { color: colors.text }]}>{DUMMY_DURATION}</Text>
+                            <Text style={[styles.statLabel, { color: colors.textMuted }]}>Est. Duration</Text>
+                            <Text style={[styles.statValue, { color: colors.text }]}>
+                                {distance?.durationMinutes !== undefined ? `~${distance.durationMinutes} mins` : "Calculating…"}
+                            </Text>
                         </View>
                     </View>
                 </View>
 
+                {/* Coupon Code Card */}
                 <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <Text style={[styles.cardTitle, { color: colors.textMuted }]}>Coupon</Text>
                     <View style={styles.couponRow}>
                         <TextInput
                             style={[styles.couponInput, { borderColor: colors.border, color: colors.text }]}
-                            placeholder="Enter coupon code"
+                            placeholder="Enter coupon code (e.g. SAVE20)"
                             placeholderTextColor={colors.textMuted}
                             value={couponInput}
                             onChangeText={(text) => {
@@ -100,33 +197,95 @@ export default function BookingSummaryScreen() {
                             autoCapitalize="characters"
                             accessibilityLabel="Coupon code"
                         />
-                        <Pressable
-                            onPress={handleApplyCoupon}
-                            accessibilityRole="button"
-                            accessibilityLabel="Apply coupon"
-                            style={[styles.applyButton, { backgroundColor: colors.secondary }]}
-                        >
-                            <Text style={[styles.applyButtonText, { color: colors.card }]}>Apply</Text>
-                        </Pressable>
+                        {appliedCoupon ? (
+                            <Pressable
+                                onPress={handleRemoveCoupon}
+                                accessibilityRole="button"
+                                accessibilityLabel="Remove coupon"
+                                style={[styles.applyButton, { backgroundColor: colors.danger }]}
+                            >
+                                <Text style={[styles.applyButtonText, { color: "#FFFFFF" }]}>Remove</Text>
+                            </Pressable>
+                        ) : (
+                            <Pressable
+                                onPress={handleApplyCoupon}
+                                accessibilityRole="button"
+                                accessibilityLabel="Apply coupon"
+                                style={[styles.applyButton, { backgroundColor: colors.secondary }]}
+                            >
+                                <Text style={[styles.applyButtonText, { color: colors.card }]}>Apply</Text>
+                            </Pressable>
+                        )}
                     </View>
-                    {couponError ? <Text style={[styles.couponError, { color: colors.danger }]}>{couponError}</Text> : null}
-                    {isCouponApplied ? (
-                        <Text style={[styles.couponSuccess, { color: colors.success }]}>Coupon applied — 20% off fare</Text>
+                    {couponError ? (
+                        <Text style={[styles.couponError, { color: colors.danger }]}>{couponError}</Text>
+                    ) : null}
+                    {pricing?.isCouponApplied ? (
+                        <Text style={[styles.couponSuccess, { color: colors.success }]}>
+                            ✓ Coupon {pricing.coupon} applied (-₹{pricing.discount})
+                        </Text>
+                    ) : appliedCoupon && !loading ? (
+                        <Text style={[styles.couponError, { color: colors.danger }]}>
+                            Coupon {appliedCoupon} is invalid or inactive
+                        </Text>
                     ) : null}
                 </View>
 
+                {/* Server Fare Breakdown Card */}
                 <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <FareRow label="Fare" value={baseFare} colors={colors} />
-                    <FareRow label="GST (5%)" value={gst} colors={colors} />
-                    <FareRow label="Platform Fee" value={PLATFORM_FEE} colors={colors} />
-                    {isCouponApplied && <FareRow label="Coupon Discount" value={-discount} colors={colors} highlight />}
-                    <View style={[styles.totalDivider, { backgroundColor: colors.border }]} />
-                    <FareRow label="Total Amount" value={total} colors={colors} bold />
+                    <Text style={[styles.cardTitle, { color: colors.textMuted }]}>Fare Breakdown</Text>
+
+                    {loading && !pricing ? (
+                        <View style={styles.loadingWrapper}>
+                            <ActivityIndicator color={colors.primary} />
+                            <Text style={[styles.loadingText, { color: colors.textMuted }]}>
+                                Calculating server fare…
+                            </Text>
+                        </View>
+                    ) : error ? (
+                        <View style={styles.errorWrapper}>
+                            <Text style={[styles.couponError, { color: colors.danger }]}>{error}</Text>
+                            <Pressable onPress={() => fetchServerEstimate(appliedCoupon)}>
+                                <Text style={{ color: colors.primary, marginTop: 4 }}>Retry</Text>
+                            </Pressable>
+                        </View>
+                    ) : pricing ? (
+                        <>
+                            <FareRow
+                                label={`Base Fare (first ${pricing.baseDistanceKm} km)`}
+                                value={pricing.baseFare}
+                                colors={colors}
+                            />
+                            {pricing.extraDistanceKm > 0 && (
+                                <FareRow
+                                    label={`Extra Distance (${pricing.extraDistanceKm} km × ₹${pricing.perKmRate})`}
+                                    value={pricing.distanceFare}
+                                    colors={colors}
+                                />
+                            )}
+                            <FareRow label="Platform Fee" value={pricing.platformFee} colors={colors} />
+                            <FareRow label="GST (5%)" value={pricing.gst} colors={colors} />
+                            {pricing.isCouponApplied && (
+                                <FareRow
+                                    label={`Discount (${pricing.coupon})`}
+                                    value={-pricing.discount}
+                                    colors={colors}
+                                    highlight
+                                />
+                            )}
+                            <View style={[styles.totalDivider, { backgroundColor: colors.border }]} />
+                            <FareRow label="Total Estimated Fare" value={pricing.totalFare} colors={colors} bold />
+                        </>
+                    ) : null}
                 </View>
             </ScrollView>
 
             <View style={[styles.footer, { borderTopColor: colors.border, backgroundColor: colors.card }]}>
-                <PrimaryButton title={`Proceed to Payment · ₹${total}`} onPress={handleProceed} />
+                <PrimaryButton
+                    title={`Proceed to Payment · ₹${pricing?.totalFare || fare || 0}`}
+                    onPress={handleProceed}
+                    disabled={loading || !!error}
+                />
             </View>
         </SafeAreaView>
     );
@@ -135,7 +294,13 @@ export default function BookingSummaryScreen() {
 function FareRow({ label, value, bold, highlight, colors }) {
     return (
         <View style={styles.fareRow}>
-            <Text style={[styles.fareLabel, { color: colors.textMuted }, bold && [styles.fareLabelBold, { color: colors.text }]]}>
+            <Text
+                style={[
+                    styles.fareLabel,
+                    { color: colors.textMuted },
+                    bold && [styles.fareLabelBold, { color: colors.text }],
+                ]}
+            >
                 {label}
             </Text>
             <Text
@@ -183,4 +348,7 @@ const styles = StyleSheet.create({
     fareValueBold: { fontWeight: Fonts.weight.bold, fontSize: Fonts.h3 },
     totalDivider: { height: 1, marginVertical: Spacing.sm },
     footer: { padding: Spacing.lg, borderTopWidth: 1 },
+    loadingWrapper: { paddingVertical: Spacing.md, alignItems: "center" },
+    loadingText: { fontSize: Fonts.caption, marginTop: Spacing.xs },
+    errorWrapper: { paddingVertical: Spacing.sm },
 });

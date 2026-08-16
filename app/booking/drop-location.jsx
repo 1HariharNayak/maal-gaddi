@@ -1,148 +1,136 @@
-import { useState, useEffect } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator } from "react-native";
+import React, { useState, useEffect } from "react";
+import { View, Text, StyleSheet, KeyboardAvoidingView, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
-import Spacing from "../../constants/Spacing";
 import Fonts from "../../constants/Fonts";
 import Header from "../../components/Header";
-import SearchBar from "../../components/SearchBar";
-import EmptyState from "../../components/EmptyState";
+import PlaceSearchInput from "../../components/LocationSearch/PlaceSearchInput";
+import MapLocationPicker from "../../components/LocationPicker/MapLocationPicker";
 import { useBooking } from "../../context/BookingContext";
 import { useTheme } from "../../context/ThemeContext";
-import { recentLocations, savedLocations } from "../../services/dummyData";
 
 export default function DropLocationScreen() {
     const router = useRouter();
-    const { pickupLocation, setDropLocation } = useBooking();
-    const { colors, isDark } = useTheme();
-    const [query, setQuery] = useState("");
-    const [loading, setLoading] = useState(true);
+    const { pickupLocation, dropLocation, setDropLocation } = useBooking();
+    const { colors } = useTheme();
 
+    const [selectedLocation, setSelectedLocation] = useState(dropLocation || null);
+
+    // Keep local draft synchronized with context on navigation back/forward
     useEffect(() => {
-        const timer = setTimeout(() => setLoading(false), 500);
-        return () => clearTimeout(timer);
-    }, []);
+        setSelectedLocation(dropLocation || null);
+    }, [dropLocation]);
 
-    const selectLocation = (address) => {
-        setDropLocation({ address, latitude: null, longitude: null });
-        router.push("/booking/vehicle-selection");
+    const handleSearchSelect = (location) => {
+        if (location && typeof location.latitude === "number" && typeof location.longitude === "number") {
+            setSelectedLocation(location);
+        }
     };
 
-    const normalizedQuery = query.trim().toLowerCase();
-    const filteredSaved = normalizedQuery
-        ? savedLocations.filter((l) => l.label.toLowerCase().includes(normalizedQuery) || l.address.toLowerCase().includes(normalizedQuery))
-        : savedLocations;
-    const filteredRecent = normalizedQuery
-        ? recentLocations.filter((l) => l.label.toLowerCase().includes(normalizedQuery) || l.address.toLowerCase().includes(normalizedQuery))
-        : recentLocations;
-    const nothingFound = normalizedQuery && filteredSaved.length === 0 && filteredRecent.length === 0;
+    const handleConfirmLocation = (location) => {
+        if (
+            !location ||
+            typeof location.latitude !== "number" ||
+            typeof location.longitude !== "number" ||
+            !location.address
+        ) {
+            return;
+        }
+
+        const confirmed = {
+            address: location.address.trim(),
+            latitude: Number(location.latitude),
+            longitude: Number(location.longitude),
+        };
+
+        // Development coordinate logging
+        console.log("[DROP CONFIRMED]", {
+            address: confirmed.address,
+            latitude: confirmed.latitude,
+            longitude: confirmed.longitude,
+        });
+
+        setDropLocation(confirmed);
+        router.push("/booking/vehicle-selection");
+    };
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["top"]}>
             <Header title="Drop Location" />
 
-            <View style={[styles.mapPlaceholder, { backgroundColor: isDark ? "#1E293B" : "#E4ECF7" }]}>
-                <Ionicons name="flag" size={36} color={colors.primary} />
-                <Text style={[styles.mapCaption, { color: colors.textMuted }]}>Map preview</Text>
-            </View>
-
-            <View style={styles.content}>
-                <View style={styles.pickupSummary}>
-                    <Ionicons name="ellipse" size={10} color={colors.textMuted} />
-                    <Text style={[styles.pickupSummaryText, { color: colors.textMuted }]} numberOfLines={1}>
-                        From: {pickupLocation?.address || "Not set"}
+            <KeyboardAvoidingView
+                style={styles.keyboardView}
+                behavior={Platform.OS === "ios" ? "padding" : undefined}
+            >
+                {/* Pickup Summary Bar */}
+                <View
+                    style={[
+                        styles.pickupSummaryBar,
+                        { backgroundColor: colors.card, borderBottomColor: colors.border },
+                    ]}
+                >
+                    <Ionicons name="ellipse" size={8} color={colors.primary} />
+                    <Text
+                        style={[styles.pickupSummaryText, { color: colors.textMuted }]}
+                        numberOfLines={1}
+                    >
+                        Pickup: {pickupLocation?.address || "Selected on map"}
                     </Text>
                 </View>
 
-                <SearchBar placeholder="Search for a drop address" value={query} onChangeText={setQuery} />
+                {/* Search Bar with dropdown */}
+                <View style={styles.searchContainer}>
+                    <PlaceSearchInput
+                        placeholder="Search drop destination or landmark"
+                        initialValue={selectedLocation?.address || ""}
+                        onSelectLocation={handleSearchSelect}
+                    />
+                </View>
 
-                {normalizedQuery.length > 0 && (
-                    <Pressable
-                        style={styles.useTypedRow}
-                        onPress={() => selectLocation(query.trim())}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Use ${query.trim()} as drop address`}
-                    >
-                        <Ionicons name="pin-outline" size={18} color={colors.primary} />
-                        <Text style={[styles.useTypedText, { color: colors.primary }]} numberOfLines={1}>
-                            Use "{query.trim()}"
-                        </Text>
-                    </Pressable>
-                )}
-
-                {loading ? (
-                    <View style={styles.loadingWrapper}>
-                        <ActivityIndicator color={colors.primary} />
-                    </View>
-                ) : nothingFound ? (
-                    <EmptyState icon="search-outline" title="No matching addresses" message="Try a different search term." />
-                ) : (
-                    <>
-                        {filteredSaved.length > 0 && (
-                            <View style={styles.section}>
-                                <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>Saved Locations</Text>
-                                <FlatList
-                                    data={filteredSaved}
-                                    scrollEnabled={false}
-                                    keyExtractor={(item) => `saved-${item.id}`}
-                                    renderItem={({ item }) => (
-                                        <LocationRow icon={item.icon} label={item.label} address={item.address} onPress={() => selectLocation(item.address)} colors={colors} />
-                                    )}
-                                />
-                            </View>
-                        )}
-
-                        {filteredRecent.length > 0 && (
-                            <View style={styles.section}>
-                                <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>Recent Locations</Text>
-                                <FlatList
-                                    data={filteredRecent}
-                                    scrollEnabled={false}
-                                    keyExtractor={(item) => `recent-${item.id}`}
-                                    renderItem={({ item }) => (
-                                        <LocationRow icon="time-outline" label={item.label} address={item.address} onPress={() => selectLocation(item.address)} colors={colors} />
-                                    )}
-                                />
-                            </View>
-                        )}
-                    </>
-                )}
-            </View>
+                {/* Interactive Map Picker */}
+                <View style={styles.mapContainer}>
+                    <MapLocationPicker
+                        title="Drop Point"
+                        confirmButtonTitle="Confirm Drop Location"
+                        initialLocation={selectedLocation}
+                        onConfirm={handleConfirmLocation}
+                    />
+                </View>
+            </KeyboardAvoidingView>
         </SafeAreaView>
     );
 }
 
-function LocationRow({ icon, label, address, onPress, colors }) {
-    return (
-        <Pressable style={styles.locationRow} onPress={onPress} accessibilityRole="button" accessibilityLabel={`${label}, ${address}`}>
-            <View style={[styles.locationIconWrapper, { backgroundColor: colors.background }]}>
-                <Ionicons name={icon || "location-outline"} size={18} color={colors.secondary} />
-            </View>
-            <View style={styles.flexShrink}>
-                <Text style={[styles.locationLabel, { color: colors.text }]}>{label}</Text>
-                <Text style={[styles.locationAddress, { color: colors.textMuted }]} numberOfLines={1}>{address}</Text>
-            </View>
-        </Pressable>
-    );
-}
-
 const styles = StyleSheet.create({
-    container: { flex: 1 },
-    mapPlaceholder: { height: 180, alignItems: "center", justifyContent: "center" },
-    mapCaption: { fontSize: Fonts.caption, marginTop: Spacing.xs },
-    content: { flex: 1, padding: Spacing.lg },
-    pickupSummary: { flexDirection: "row", alignItems: "center", marginBottom: Spacing.md },
-    pickupSummaryText: { fontSize: Fonts.caption, marginLeft: Spacing.sm, flexShrink: 1 },
-    useTypedRow: { flexDirection: "row", alignItems: "center", paddingVertical: Spacing.md },
-    useTypedText: { fontSize: Fonts.body, fontWeight: Fonts.weight.medium, marginLeft: Spacing.sm, flexShrink: 1 },
-    loadingWrapper: { paddingVertical: Spacing.xl, alignItems: "center" },
-    section: { marginTop: Spacing.md },
-    sectionTitle: { fontSize: Fonts.caption, fontWeight: Fonts.weight.semibold, textTransform: "uppercase", marginBottom: Spacing.sm },
-    locationRow: { flexDirection: "row", alignItems: "center", paddingVertical: Spacing.sm },
-    locationIconWrapper: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", marginRight: Spacing.sm },
-    flexShrink: { flexShrink: 1 },
-    locationLabel: { fontSize: Fonts.body, fontWeight: Fonts.weight.medium },
-    locationAddress: { fontSize: Fonts.caption },
+    container: {
+        flex: 1,
+    },
+    keyboardView: {
+        flex: 1,
+    },
+    pickupSummaryBar: {
+        flexDirection: "row",
+        alignItems: "center",
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderBottomWidth: 1,
+    },
+    pickupSummaryText: {
+        fontSize: Fonts.caption,
+        marginLeft: 8,
+        flexShrink: 1,
+        fontWeight: Fonts.weight.medium,
+    },
+    searchContainer: {
+        paddingHorizontal: 16,
+        paddingTop: 8,
+        paddingBottom: 8,
+        zIndex: 20,
+    },
+    mapContainer: {
+        flex: 1,
+        zIndex: 1,
+    },
 });

@@ -24,7 +24,7 @@ const PRIMARY_TINT = "rgba(255, 107, 0, 0.15)";
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { setSelectedVehicle, setConfirmedBooking } = useBooking();
+  const { setSelectedVehicle, setConfirmedBooking, resetBooking } = useBooking();
   const { colors } = useTheme();
 
   const [vehiclesList, setVehiclesList] = useState(null);
@@ -56,11 +56,16 @@ export default function HomeScreen() {
     };
   }, [loadVehicles]);
 
-  const goToBookingStart = () => router.push("/booking/pickup-location");
+  // Starting a fresh booking from home resets all previous draft booking locations and states
+  const goToBookingStart = () => {
+    resetBooking();
+    router.push("/booking/pickup-location");
+  };
 
   const handleVehiclePress = (vehicle) => {
+    resetBooking();
     setSelectedVehicle(vehicle);
-    goToBookingStart();
+    router.push("/booking/pickup-location");
   };
 
   const handleBookingPress = (booking) => {
@@ -98,9 +103,9 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.searchStack}>
-            <SearchBar placeholder="Pickup Location" icon="ellipse-outline" onPress={() => router.push("/booking/pickup-location")} />
+            <SearchBar placeholder="Pickup Location" icon="ellipse-outline" onPress={goToBookingStart} />
             <View style={styles.searchGap} />
-            <SearchBar placeholder="Where to?" icon="location" onPress={() => router.push("/booking/drop-location")} />
+            <SearchBar placeholder="Where to?" icon="location" onPress={goToBookingStart} />
           </View>
 
           <View style={styles.section}>

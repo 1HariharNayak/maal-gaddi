@@ -11,7 +11,6 @@ import PrimaryButton from "../../components/Button";
 import { useBooking } from "../../context/BookingContext";
 import { useTheme } from "../../context/ThemeContext";
 import { createBooking } from "../../services/api";
-import { calculateFareBreakdown } from "../../utils/pricing";
 
 const PAYMENT_METHODS = [
   { id: "upi", label: "UPI", icon: "cellphone", family: "MaterialCommunityIcons" },
@@ -23,15 +22,21 @@ const PAYMENT_METHODS = [
 
 export default function PaymentScreen() {
   const router = useRouter();
-  const { pickupLocation, dropLocation, selectedVehicle, fare, coupon, setConfirmedBooking } = useBooking();
+  const {
+    pickupLocation,
+    dropLocation,
+    selectedVehicle,
+    fare,
+    coupon,
+    setConfirmedBooking,
+  } = useBooking();
   const { colors } = useTheme();
 
   const [selectedMethod, setSelectedMethod] = useState("upi");
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState("");
 
-  const baseFare = fare ?? selectedVehicle?.price ?? 0;
-  const { isCouponApplied, total } = calculateFareBreakdown(baseFare, coupon);
+  const displayTotal = fare ?? selectedVehicle?.price ?? 0;
 
   const handlePay = async () => {
     if (!selectedVehicle?._id && !selectedVehicle?.id) {
@@ -42,20 +47,20 @@ export default function PaymentScreen() {
     setPaying(true);
     setError("");
 
+    // Send only route and vehicle parameters — backend authoritatively calculates and verifies the final fare
     const payload = {
       vehicleId: selectedVehicle._id || selectedVehicle.id,
       pickupLocation: {
         address: pickupLocation?.address || "Pickup Location",
-        latitude: pickupLocation?.latitude || 12.9716,
-        longitude: pickupLocation?.longitude || 77.5946,
+        latitude: pickupLocation?.latitude ?? null,
+        longitude: pickupLocation?.longitude ?? null,
       },
       dropLocation: {
         address: dropLocation?.address || "Drop Location",
-        latitude: dropLocation?.latitude || 12.9698,
-        longitude: dropLocation?.longitude || 77.7500,
+        latitude: dropLocation?.latitude ?? null,
+        longitude: dropLocation?.longitude ?? null,
       },
-      fare: total,
-      coupon: isCouponApplied ? coupon : undefined,
+      coupon: coupon || undefined,
     };
 
     const { data, error: apiError } = await createBooking(payload);
@@ -76,19 +81,21 @@ export default function PaymentScreen() {
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={[styles.amountCard, { backgroundColor: "#1E293B" }]}>
-          <Text style={styles.amountLabel}>Amount to pay</Text>
-          <Text style={styles.amountValue}>₹{total}</Text>
+          <Text style={styles.amountLabel}>Estimated Amount to Pay</Text>
+          <Text style={styles.amountValue}>₹{displayTotal}</Text>
           <Text style={styles.routeSummary} numberOfLines={1}>
             {pickupLocation?.address || "Pickup"} → {dropLocation?.address || "Drop"}
           </Text>
         </View>
 
-        {isCouponApplied && (
+        {coupon ? (
           <View style={styles.couponBadge}>
             <Ionicons name="pricetag" size={14} color={colors.success} />
-            <Text style={[styles.couponBadgeText, { color: colors.success }]}>Coupon {coupon} applied</Text>
+            <Text style={[styles.couponBadgeText, { color: colors.success }]}>
+              Coupon {coupon} Applied
+            </Text>
           </View>
-        )}
+        ) : null}
 
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Payment Method</Text>
         <View style={[styles.methodsList, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -131,7 +138,7 @@ export default function PaymentScreen() {
       </ScrollView>
 
       <View style={[styles.footer, { borderTopColor: colors.border, backgroundColor: colors.card }]}>
-        <PrimaryButton title={`Pay ₹${total}`} onPress={handlePay} loading={paying} />
+        <PrimaryButton title={`Pay ₹${displayTotal}`} onPress={handlePay} loading={paying} />
       </View>
     </SafeAreaView>
   );

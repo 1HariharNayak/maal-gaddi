@@ -19,6 +19,12 @@ export async function fetchVehicles() {
             _id: v._id || v.id,
             name: v.name,
             price: v.price,
+            pricing: v.pricing || {
+                baseFare: v.price || 200,
+                baseDistanceKm: 2.0,
+                perKmRate: 18,
+                minimumFare: v.price || 200,
+            },
             capacity: v.capacity,
             eta: v.eta,
             icon: v.icon,
@@ -33,7 +39,7 @@ export async function fetchVehicles() {
     }
 }
 
-// --- REAL backend calls (bookings) ---
+// --- REAL backend calls (bookings & pricing) ---
 function mapBooking(b) {
     if (!b) return null;
     return {
@@ -45,6 +51,7 @@ function mapBooking(b) {
         driver: b.driver || "Assigning driver…",
         status: b.status || "Upcoming",
         fare: b.fare,
+        pricingBreakdown: b.pricingBreakdown,
         coupon: b.coupon,
         pickupLocation: b.pickupLocation,
         dropLocation: b.dropLocation,
@@ -58,6 +65,23 @@ function mapBooking(b) {
         createdAt: b.createdAt,
         updatedAt: b.updatedAt,
     };
+}
+
+export async function estimateFare(payload) {
+    try {
+        const response = await apiClient.post("/bookings/estimate-fare", {
+            vehicleId: payload.vehicleId,
+            pickupLocation: payload.pickupLocation,
+            dropLocation: payload.dropLocation,
+            coupon: payload.coupon,
+        });
+        return { data: response.data, error: null };
+    } catch (error) {
+        return {
+            data: null,
+            error: error.response?.data?.message || "Failed to calculate fare estimate",
+        };
+    }
 }
 
 export async function fetchBookings(status) {
@@ -81,7 +105,6 @@ export async function createBooking(payload) {
             vehicleId: payload.vehicleId,
             pickupLocation: payload.pickupLocation,
             dropLocation: payload.dropLocation,
-            fare: payload.fare,
             coupon: payload.coupon,
         });
         return { data: mapBooking(response.data), error: null };

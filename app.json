@@ -13,11 +13,27 @@
     "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.maalgaddi.app"
+      "bundleIdentifier": "com.maalgaddi.app",
+      "config": {
+        "googleMapsApiKey": ""
+      }
     },
     "android": {
-      "package": "com.maalgaddi.app"
+      "package": "com.maalgaddi.app",
+      "config": {
+        "googleMaps": {
+          "apiKey": ""
+        }
+      }
     },
-    "plugins": ["expo-router"]
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow Maal Gaddi to use your location to set pickup points."
+        }
+      ]
+    ]
   }
 }

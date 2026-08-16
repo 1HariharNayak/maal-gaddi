@@ -11,3 +11,6 @@ web-build/
 *.mobileprovision
 *.orig.*
 .vscode/
+.env
+.env.local
+.env.*.local
